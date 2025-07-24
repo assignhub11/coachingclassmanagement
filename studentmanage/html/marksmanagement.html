@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marks Management System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 20px; }
+        .editable-mark {
+            border-bottom: 2px dashed #6c757d;
+            min-width: 60px;
+            display: inline-block;
+            padding: 0 5px;
+        }
+        .editable-mark:focus {
+            outline: none;
+            border-bottom: 2px solid #0d6efd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-center mb-4">Marks Management</h2>
+        
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <select id="classSelect" class="form-select">
+                    <option value="11">11th Grade</option>
+                    <option value="12">12th Grade</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <input type="text" id="chapterName" class="form-control" placeholder="Chapter Name" value="Chapter 1">
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-bordered">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Roll No.</th>
+                        <th>Student Name</th>
+                        <th>Marks (Out of 100)</th>
+                    </tr>
+                </thead>
+                <tbody id="studentsTable">
+                    <tr>
+                        <td colspan="3" class="text-center">Loading students...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
+    
+    <script>
+        // Initialize Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyBpBNXPgfC8oKwH_hcESZd1OSjxkuZ3qP8",
+            authDomain: "cmanagementweb-53319.firebaseapp.com",
+            projectId: "cmanagementweb-53319",
+            storageBucket: "cmanagementweb-53319.appspot.com",
+            messagingSenderId: "98416562035",
+            appId: "1:98416562035:web:f083d012b694d971d17f06",
+            measurementId: "G-NG15WBG6EH"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Load students when page loads
+        document.addEventListener('DOMContentLoaded', loadStudents);
+
+        // Reload when class or chapter changes
+        document.getElementById('classSelect').addEventListener('change', loadStudents);
+        document.getElementById('chapterName').addEventListener('change', loadStudents);
+
+        async function loadStudents() {
+            const classValue = document.getElementById('classSelect').value;
+            const chapter = document.getElementById('chapterName').value;
+            const tableBody = document.getElementById('studentsTable');
+            
+            tableBody.innerHTML = '<tr><td colspan="3" class="text-center">Loading...</td></tr>';
+
+            try {
+                // 1. Get all students from the selected class
+                const studentsSnapshot = await db.collection(`students_${classValue}`).get();
+                const students = studentsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                // 2. Get existing marks for this chapter
+                const marksSnapshot = await db.collection('marks')
+                    .where('class', '==', classValue)
+                    .where('chapter', '==', chapter)
+                    .get();
+                
+                const marksData = marksSnapshot.docs.reduce((acc, doc) => {
+                    acc[doc.data().studentId] = doc.data().marks;
+                    return acc;
+                }, {});
+
+                // 3. Render the table
+                renderStudentsTable(students, marksData);
+            } catch (error) {
+                console.error("Error loading data:", error);
+                tableBody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading students</td></tr>';
+            }
+        }
+
+        function renderStudentsTable(students, marksData) {
+            const tableBody = document.getElementById('studentsTable');
+            tableBody.innerHTML = '';
+
+            if (students.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="3" class="text-center">No students found</td></tr>';
+                return;
+            }
+
+            students.forEach(student => {
+                const row = document.createElement('tr');
+                
+                // Get marks for this student or empty string if none
+                const marks = marksData[student.id] || '';
+                
+                row.innerHTML = `
+                    <td>${student.rollNumber || 'N/A'}</td>
+                    <td>${student.name || student.fullName || 'Unknown Student'}</td>
+                    <td>
+                        <span class="editable-mark" 
+                              contenteditable="true"
+                              data-student="${student.id}">${marks}</span>
+                    </td>
+                `;
+                
+                tableBody.appendChild(row);
+                
+                // Add event listener for mark editing
+                row.querySelector('.editable-mark').addEventListener('blur', function() {
+                    updateMarks(student.id, this.textContent);
+                });
+            });
+        }
+
+        async function updateMarks(studentId, marks) {
+            const classValue = document.getElementById('classSelect').value;
+            const chapter = document.getElementById('chapterName').value;
+            
+            // Validate marks
+            if (marks.trim() !== '' && (isNaN(marks) || marks < 0 || marks > 100)) {
+                alert("Please enter a valid mark between 0 and 100");
+                return;
+            }
+
+            try {
+                const docRef = db.collection('marks').doc(`${classValue}_${chapter}_${studentId}`);
+                
+                if (marks.trim() === '') {
+                    // Delete if marks are empty
+                    await docRef.delete();
+                } else {
+                    // Update or create marks record
+                    await docRef.set({
+                        studentId: studentId,
+                        class: classValue,
+                        chapter: chapter,
+                        marks: parseInt(marks),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                }
+                
+                // Refresh the table
+                loadStudents();
+            } catch (error) {
+                console.error("Error updating marks:", error);
+                alert("Failed to save marks. Please try again.");
+            }
+        }
+    </script>
+</body>
+</html>

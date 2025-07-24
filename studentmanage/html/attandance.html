@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        body { padding: 20px; background-color: #f8f9fa; }
+        .attendance-card {
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card-11th { border-left: 5px solid #0d6efd; }
+        .card-12th { border-left: 5px solid #198754; }
+        .attendance-table th { background: #343a40; color: white; position: sticky; top: 0; }
+        .present { background-color: #d4edda !important; }
+        .absent { background-color: #f8d7da !important; }
+        .attendance-btn { min-width: 100px; }
+        .date-selector { max-width: 250px; }
+        .tab-btn.active { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <h1 class="mb-4 text-center">Attendance System</h1>
+        
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <input type="date" id="attendanceDate" class="form-control date-selector" value="">
+            </div>
+            <div class="col-md-6 text-end">
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-primary tab-btn active" id="tab11th">11th Grade</button>
+                    <button type="button" class="btn btn-success tab-btn" id="tab12th">12th Grade</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-12">
+                <div class="attendance-card card-11th" id="11th-attendance-card">
+                    <h3><i class="bi bi-people-fill text-primary"></i> 11th Grade</h3>
+                    <div class="table-responsive mt-3">
+                        <table class="table table-hover attendance-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Student Name</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="11th-attendance-body">
+                                <tr>
+                                    <td colspan="4" class="text-center">Loading 11th grade students...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="attendance-card card-12th" id="12th-attendance-card" style="display: none;">
+                    <h3><i class="bi bi-people-fill text-success"></i> 12th Grade</h3>
+                    <div class="table-responsive mt-3">
+                        <table class="table table-hover attendance-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Student Name</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="12th-attendance-body">
+                                <tr>
+                                    <td colspan="4" class="text-center">Loading 12th grade students...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
+    <script>
+        // Initialize Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyBpBNXPgfC8oKwH_hcESZd1OSjxkuZ3qP8",
+            authDomain: "cmanagementweb-53319.firebaseapp.com",
+            projectId: "cmanagementweb-53319",
+            storageBucket: "cmanagementweb-53319.appspot.com",
+            messagingSenderId: "98416562035",
+            appId: "1:98416562035:web:f083d012b694d971d17f06",
+            measurementId: "G-NG15WBG6EH"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Global variables
+        let currentGrade = '11th';
+        let studentsData = { '11th': [], '12th': [] };
+        let attendanceData = {};
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set today's date as default
+            const today = new Date();
+            document.getElementById('attendanceDate').valueAsDate = today;
+            document.getElementById('attendanceDate').value = today.toISOString().split('T')[0];
+            
+            // Tab switching
+            document.getElementById('tab11th').addEventListener('click', () => switchGrade('11th'));
+            document.getElementById('tab12th').addEventListener('click', () => switchGrade('12th'));
+            
+            // Date change handler
+            document.getElementById('attendanceDate').addEventListener('change', loadAttendance);
+            
+            // Load initial data
+            loadStudents();
+        });
+
+        function switchGrade(grade) {
+            currentGrade = grade;
+            if (grade === '11th') {
+                document.getElementById('11th-attendance-card').style.display = 'block';
+                document.getElementById('12th-attendance-card').style.display = 'none';
+                document.getElementById('tab11th').classList.add('active');
+                document.getElementById('tab12th').classList.remove('active');
+            } else {
+                document.getElementById('11th-attendance-card').style.display = 'none';
+                document.getElementById('12th-attendance-card').style.display = 'block';
+                document.getElementById('tab11th').classList.remove('active');
+                document.getElementById('tab12th').classList.add('active');
+            }
+            renderAttendanceTable(grade);
+        }
+
+        async function loadStudents() {
+            try {
+                // Load 11th grade students
+                const eleventhSnapshot = await db.collection('students_11th').get();
+                studentsData['11th'] = eleventhSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                
+                // Load 12th grade students
+                const twelfthSnapshot = await db.collection('students_12th').get();
+                studentsData['12th'] = twelfthSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                
+                // Load any existing attendance records
+                loadAttendance();
+                
+            } catch (error) {
+                console.error("Error loading students:", error);
+                document.getElementById('11th-attendance-body').innerHTML = 
+                    '<tr><td colspan="4" class="text-center text-danger">Error loading students</td></tr>';
+                document.getElementById('12th-attendance-body').innerHTML = 
+                    '<tr><td colspan="4" class="text-center text-danger">Error loading students</td></tr>';
+            }
+        }
+
+        async function loadAttendance() {
+            const date = document.getElementById('attendanceDate').value;
+            if (!date) return;
+            
+            try {
+                // Initialize all as present by default
+                studentsData['11th'].forEach(student => {
+                    attendanceData[student.id] = 'present';
+                });
+                studentsData['12th'].forEach(student => {
+                    attendanceData[student.id] = 'present';
+                });
+                
+                // Load attendance for selected date
+                const attendanceSnapshot = await db.collection('attendance')
+                    .where('date', '==', date)
+                    .get();
+                
+                // Update with existing records
+                attendanceSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    attendanceData[data.studentId] = data.status;
+                });
+                
+                // Render both tables
+                renderAttendanceTable('11th');
+                renderAttendanceTable('12th');
+                
+            } catch (error) {
+                console.error("Error loading attendance:", error);
+            }
+        }
+
+        function renderAttendanceTable(grade) {
+            const tbodyId = `${grade}-attendance-body`;
+            const tbody = document.getElementById(tbodyId);
+            
+            if (studentsData[grade].length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center">No students found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            studentsData[grade].forEach((student, index) => {
+                const status = attendanceData[student.id] || 'present';
+                const row = document.createElement('tr');
+                row.className = status === 'present' ? 'present' : 'absent';
+                
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${student.fullName || student.name || 'N/A'}</td>
+                    <td>
+                        <span class="badge ${status === 'present' ? 'bg-success' : 'bg-danger'}">
+                            ${status === 'present' ? 'Present' : 'Absent'}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm ${status === 'present' ? 'btn-danger' : 'btn-success'} attendance-btn" 
+                                data-student="${student.id}">
+                            ${status === 'present' ? 'Mark Absent' : 'Mark Present'}
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+                
+                // Add click event to the button
+                const button = row.querySelector('.attendance-btn');
+                button.addEventListener('click', function() {
+                    updateAttendanceStatus(student.id, grade);
+                });
+            });
+        }
+
+        async function updateAttendanceStatus(studentId, grade) {
+            const date = document.getElementById('attendanceDate').value;
+            const currentStatus = attendanceData[studentId] || 'present';
+            const newStatus = currentStatus === 'present' ? 'absent' : 'present';
+            
+            // Update local data
+            attendanceData[studentId] = newStatus;
+            
+            // Find the row to update
+            const tbody = document.getElementById(`${grade}-attendance-body`);
+            const rows = tbody.getElementsByTagName('tr');
+            
+            for (const row of rows) {
+                const button = row.querySelector('.attendance-btn');
+                if (button && button.getAttribute('data-student') === studentId) {
+                    // Update row appearance
+                    row.className = newStatus === 'present' ? 'present' : 'absent';
+                    
+                    // Update status badge
+                    row.cells[2].innerHTML = `
+                        <span class="badge ${newStatus === 'present' ? 'bg-success' : 'bg-danger'}">
+                            ${newStatus === 'present' ? 'Present' : 'Absent'}
+                        </span>
+                    `;
+                    
+                    // Update button
+                    button.textContent = newStatus === 'present' ? 'Mark Absent' : 'Mark Present';
+                    button.className = `btn btn-sm ${newStatus === 'present' ? 'btn-danger' : 'btn-success'} attendance-btn`;
+                    break;
+                }
+            }
+            
+            // Save to Firebase
+            try {
+                const student = studentsData[grade].find(s => s.id === studentId);
+                
+                await db.collection('attendance').doc(`${date}_${studentId}`).set({
+                    studentId: studentId,
+                    studentName: student?.fullName || student?.name || 'Unknown',
+                    grade: grade,
+                    date: date,
+                    status: newStatus,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+            } catch (error) {
+                console.error("Error updating attendance:", error);
+                
+                // Revert if update fails
+                attendanceData[studentId] = currentStatus;
+                const tbody = document.getElementById(`${grade}-attendance-body`);
+                const rows = tbody.getElementsByTagName('tr');
+                
+                for (const row of rows) {
+                    const button = row.querySelector('.attendance-btn');
+                    if (button && button.getAttribute('data-student') === studentId) {
+                        row.className = currentStatus === 'present' ? 'present' : 'absent';
+                        row.cells[2].innerHTML = `
+                            <span class="badge ${currentStatus === 'present' ? 'bg-success' : 'bg-danger'}">
+                                ${currentStatus === 'present' ? 'Present' : 'Absent'}
+                            </span>
+                        `;
+                        button.textContent = currentStatus === 'present' ? 'Mark Absent' : 'Mark Present';
+                        button.className = `btn btn-sm ${currentStatus === 'present' ? 'btn-danger' : 'btn-success'} attendance-btn`;
+                        break;
+                    }
+                }
+                
+                alert("Failed to save attendance. Please check your connection and try again.");
+            }
+        }
+    </script>
+</body>
+</html>
