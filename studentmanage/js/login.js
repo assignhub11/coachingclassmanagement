@@ -79,6 +79,6 @@ function showError(message) {
 auth.onAuthStateChanged((user) => {
     if (user) {
         // User is logged in, redirect to dashboard
-        window.location.href = 'add_student.html';
+        window.location.href = 'html/dashboardown.html';
     }
 });
